@@ -4,11 +4,7 @@
 # Overlay Init Section
 [[ -z "${ARC_PATH}" || ! -d "${ARC_PATH}/include" ]] && ARC_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
 
-. "${ARC_PATH}/include/functions.sh"
 . "${ARC_PATH}/arc-functions.sh"
-. "${ARC_PATH}/include/addons.sh"
-. "${ARC_PATH}/include/modules.sh"
-. "${ARC_PATH}/include/update.sh"
 
 # Get Keymap and Timezone and check System
 onlineCheck
@@ -97,7 +93,7 @@ function advancedMenu() {
     RET=$?
     case ${RET} in
       0)
-        resp=$(cat ${TMP_PATH}/resp)
+        resp="$(cat "${TMP_PATH}/resp" 2>/dev/null)"
         [ -z "${resp}" ] && return
         case ${resp} in
           # DSM Section
@@ -229,7 +225,7 @@ elif [ "${ARC_MODE}" = "config" ]; then
 
       if [ "${PLATFORM}" = "epyc7002" ]; then
         CPUINFO="$(cat /proc/cpuinfo | grep MHz | wc -l)"
-        if [ ${CPUINFO} -gt 24 ]; then
+        if [ "${CPUINFO}" -gt 24 ]; then
           write_menu "=" "Custom Kernel should be used for this CPU"
         fi
         write_menu_value "K" "Kernel" "${KERNEL}"
@@ -237,12 +233,11 @@ elif [ "${ARC_MODE}" = "config" ]; then
 
       write_menu "b" "Addons"
 
-      for addon in "cpufreqscaling" "storagepanel" "sequentialio"; do
+      for addon in "cpufreqscaling" "storagepanel"; do
         if readConfigMap "addons" "${USER_CONFIG_FILE}" | grep -q "${addon}"; then
           case "${addon}" in
             "cpufreqscaling") write_menu_value "g" "Scaling Governor" "${GOVERNOR}" ;;
             "storagepanel") write_menu_value "P" "StoragePanel" "${STORAGEPANEL:-auto}" ;;
-            "sequentialio") write_menu_value "Q" "SequentialIO" "${SEQUENTIALIO}" ;;
           esac
         fi
       done
@@ -250,7 +245,7 @@ elif [ "${ARC_MODE}" = "config" ]; then
       write_menu "d" "Modules"
       write_menu_value "O" "Official Driver Priority" "${ODP}"
 
-      if [ "${DT}" = "false" ] && [ ${SATACONTROLLER} -gt 0 ]; then
+      if [ "${DT}" = "false" ] && [ "${SATACONTROLLER}" -gt 0 ]; then
         write_menu_value "S" "PortMap" "${REMAP}"
         write_menu_value "=" "Mapping" "${PORTMAP}"
       fi
@@ -258,7 +253,7 @@ elif [ "${ARC_MODE}" = "config" ]; then
       if [ "${DT}" = "true" ]; then
         write_menu_value "H" "Hotplug/SortDrives" "${HDDSORT}"
       else
-        write_menu_value "h" "USB as Internal" "${USBMOUNT}"
+        write_menu_value "h" "USB Disk(s) as Internal" "${USBMOUNT}"
       fi
     fi
 
@@ -293,19 +288,18 @@ elif [ "${ARC_MODE}" = "config" ]; then
     RET=$?
     case ${RET} in
       0)
-        resp=$(cat ${TMP_PATH}/resp)
+        resp="$(cat "${TMP_PATH}/resp" 2>/dev/null)"
         [ -z "${resp}" ] && return
         case ${resp} in
           0) genHardwareID; NEXT="0" ;;
           1) arcModel; NEXT="2" ;;
           b) addonMenu; NEXT="b" ;;
           d) modulesMenu; NEXT="d" ;;
-          e) ONLYVERSION="true" && arcVersion; NEXT="e" ;;
+          e) ONLYVERSION="true" && writeConfigKey "productver" "" "${USER_CONFIG_FILE}" && arcVersion; NEXT="e" ;;
           p) ONLYPATCH="true" && checkHardwareID && arcPatch; NEXT="p" ;;
           S) storageMenu; NEXT="S" ;;
           g) governorMenu; NEXT="g" ;;
           P) storagepanelMenu; NEXT="P" ;;
-          Q) sequentialIOMenu; NEXT="Q" ;;
           K) KERNEL=$([ "${KERNEL}" = "official" ] && echo 'custom' || echo 'official')
             writeConfigKey "kernel" "${KERNEL}" "${USER_CONFIG_FILE}"
             dialog --backtitle "$(backtitle)" --title "Kernel" \
@@ -317,7 +311,7 @@ elif [ "${ARC_MODE}" = "config" ]; then
             PLATFORM="$(readConfigKey "platform" "${USER_CONFIG_FILE}")"
             PRODUCTVER="$(readConfigKey "productver" "${USER_CONFIG_FILE}")"
             KVER="$(readConfigKey "platforms.${PLATFORM}.productvers.\"${PRODUCTVER}\".kver" "${P_FILE}")"
-            [ "${PLATFORM}" = "epyc7002" ] && KVERP="${PRODUCTVER}-${KVER}" || KVERP="${KVER}"
+            is_in_array "${PLATFORM}" "${KVER5L[@]}" && KVERP="${PRODUCTVER}-${KVER}" || KVERP="${KVER}"
             if [ -n "${PLATFORM}" ] && [ -n "${KVERP}" ]; then
               writeConfigKey "modules" "{}" "${USER_CONFIG_FILE}"
               mergeConfigModules "$(getAllModules "${PLATFORM}" "${KVERP}" | awk '{print $1}')" "${USER_CONFIG_FILE}"

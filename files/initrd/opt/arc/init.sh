@@ -14,21 +14,21 @@ arc_mode || die "No bootmode found!"
 [ -f "${USER_CONFIG_FILE}" ] && sed -i "s/'/\"/g" "${USER_CONFIG_FILE}" >/dev/null 2>&1 || true
 
 BUS=$(getBus "${LOADER_DISK}")
-[ -d /sys/firmware/efi ] && EFI="1" || EFI="0"
+EFI=$([ -d /sys/firmware/efi ] && echo 1 || echo 0)
 
 # Print Title centralized
 clear
 COLUMNS=$(ttysize 2>/dev/null | awk '{print $1}')
-COLUMNS=${COLUMNS:-50}
-BANNER="$(figlet -c -w "$(((${COLUMNS})))" "Arc Loader")"
+COLUMNS=${COLUMNS:-120}
+BANNER="$(figlet -c -w "${COLUMNS}" "Arc Loader")"
 TITLE="Version:"
-TITLE+=" ${ARC_VERSION} (${ARC_BUILD}) | Branch: ${ARC_BRANCH}"
+TITLE+=" ${ARC_VERSION} (${ARC_BUILD})"
 printf "\033[1;30m%*s\n" ${COLUMNS} ""
 printf "\033[1;30m%*s\033[A\n" ${COLUMNS} ""
 printf "\033[1;34m%*s\033[0m\n" ${COLUMNS} "${BANNER}"
 printf "\033[1;34m%*s\033[0m\n" $(((${#TITLE} + ${COLUMNS}) / 2)) "${TITLE}"
 TITLE="Boot:"
-[ ${EFI} -eq 1 ] && TITLE+=" [UEFI]" || TITLE+=" [BIOS]"
+[ "${EFI}" -eq 1 ] && TITLE+=" [UEFI]" || TITLE+=" [BIOS]"
 TITLE+=" | Device: [${BUS}] | Mode: [${ARC_MODE}]"
 printf "\033[1;34m%*s\033[0m\n" $(((${#TITLE} + ${COLUMNS}) / 2)) "${TITLE}"
 
@@ -40,8 +40,6 @@ initConfigKey "addons" "{}" "${USER_CONFIG_FILE}"
 initConfigKey "arc" "{}" "${USER_CONFIG_FILE}"
 initConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
 initConfigKey "arc.confdone" "false" "${USER_CONFIG_FILE}"
-initConfigKey "arc.dynamic" "false" "${USER_CONFIG_FILE}"
-initConfigKey "arc.mac" "false" "${USER_CONFIG_FILE}"
 initConfigKey "arc.offline" "false" "${USER_CONFIG_FILE}"
 initConfigKey "arc.patch" "false" "${USER_CONFIG_FILE}"
 initConfigKey "arc.hardwareid" "" "${USER_CONFIG_FILE}"
@@ -87,16 +85,22 @@ initConfigKey "time" "{}" "${USER_CONFIG_FILE}"
 initConfigKey "usbmount" "false" "${USER_CONFIG_FILE}"
 initConfigKey "zimage-hash" "" "${USER_CONFIG_FILE}"
 
+# Check for Addons and remove old ones
+deleteConfigKey "addons.codecpatch" "${USER_CONFIG_FILE}"
+deleteConfigKey "addons.photosfacepatch" "${USER_CONFIG_FILE}"
+deleteConfigKey "addons.sspatch" "${USER_CONFIG_FILE}"
+
+
 # Sort network interfaces
 if arrayExistItem "sortnetif:" $(readConfigMap "addons" "${USER_CONFIG_FILE}"); then
-  echo -e "Sorting NIC: \033[1;34mactive\033[0m"
+  echo -e "Sorting NIC: \033[1;34menabled\033[0m"
   _sort_netif "$(readConfigKey "addons.sortnetif" "${USER_CONFIG_FILE}")"
   echo
 fi
 # Read/Write IP/Mac to config
-ETHX=$(ls /sys/class/net/ 2>/dev/null | grep eth)
+ETHX="$(find /sys/class/net/ -mindepth 1 -maxdepth 1 -name 'eth*' -exec basename {} \; | sort)"
 for N in ${ETHX}; do
-  MACR="$(cat /sys/class/net/${N}/address 2>/dev/null | sed 's/://g' | tr '[:upper:]' '[:lower:]')"
+  MACR="$(cat /sys/class/net/${N}/address 2>/dev/null | sed 's/://g')"
   IPR="$(readConfigKey "network.${MACR}" "${USER_CONFIG_FILE}")"
   if [ -n "${IPR}" ] && [ "1" = "$(cat /sys/class/net/${N}/carrier 2>/dev/null)" ]; then
     IFS='/' read -r -a IPRA <<<"${IPR}"
@@ -119,7 +123,7 @@ ETHN=$(echo ${ETHX} | wc -w)
 writeConfigKey "device.nic" "${ETHN}" "${USER_CONFIG_FILE}"
 # No network devices
 echo
-[ ${ETHN} -le 0 ] && die "No NIC found! - Loader does not work without Network connection."
+[ "${ETHN}" -le 0 ] && die "No NIC found! - Loader does not work without Network connection."
 
 # Get the VID/PID if we are in USB
 VID="0x46f4"
@@ -164,7 +168,7 @@ IPCON=""
 echo -e "\033[1;37mDetected ${ETHN} NIC:\033[0m"
 echo
 
-[ ! -f /var/run/dhcpcd/pid ] && /etc/init.d/S09dhcpcd restart >/dev/null 2>&1 && sleep 3 || true
+[ ! -f /var/run/dhcpcd/pid ] && /etc/init.d/S41dhcpcd restart >/dev/null 2>&1 && sleep 3 || true
 checkNIC
 echo
 
@@ -186,7 +190,7 @@ echo -e "Use \033[1;34mDisplay Output\033[0m or \033[1;34mhttp://${IPCON}${HTTPP
 
 # Check memory and load Arc
 RAM=$(awk '/MemTotal:/ {printf "%.0f", $2 / 1024}' /proc/meminfo 2>/dev/null)
-if [ ${RAM} -le 3500 ]; then
+if [ "${RAM}" -le 3500 ]; then
   echo -e "\033[1;31mYou have less than 4GB of RAM, if errors occur in loader creation, please increase the amount of RAM.\033[0m\n\033[1;31mUse arc.sh to proceed. Not recommended!\033[0m"
 else
   exec arc.sh
